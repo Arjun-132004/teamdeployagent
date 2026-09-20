@@ -49,20 +49,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: t("invalidSignature") }, { status: 401 });
     }
 
-    // ── Registration gate: only allow existing wallets ───────
-    // const user = await User.findOne({ walletAddress });
-    // if (!user) {
-    //   return NextResponse.json(
-    //     {
-    //       success: false,
-    //       error: "New registrations are currently restricted. Please contact Tecneural to get access.",
-    //     },
-    //     { status: 403 },
-    //   );
-    // }
-
-    // user.lastLoginAt = new Date();
-    // await user.save();
+     const user = await User.findOneAndUpdate(
+      { walletAddress },
+      { $set: { lastLoginAt: new Date() }, $setOnInsert: { walletAddress } },
+      { upsert: true, new: true }
+    );
 
     const payload = { wallet: walletAddress, userId: user._id.toString() };
     const accessToken = generateAccessToken(payload);

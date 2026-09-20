@@ -16,6 +16,21 @@ RUN npm run postinstall --if-present
 RUN if [ -f prisma/schema.prisma ] || [ -f schema.prisma ]; then \
       npx --yes prisma generate; \
     fi
+# Build-time env for the frontend build (added by DeepAgent).
+# These are framework-prefixed, i.e. inlined into the public bundle by
+# design — never put a credential in a build arg. The empty defaults keep
+# the image buildable with no --build-arg; CI overrides them with the
+# real values.
+ARG NEXT_PUBLIC_PINATA_JWT=""
+ENV NEXT_PUBLIC_PINATA_JWT=${NEXT_PUBLIC_PINATA_JWT}
+ARG NEXT_PUBLIC_SOLANA_NETWORK=""
+ENV NEXT_PUBLIC_SOLANA_NETWORK=${NEXT_PUBLIC_SOLANA_NETWORK}
+ARG NEXT_PUBLIC_SOLANA_RPC_URL=""
+ENV NEXT_PUBLIC_SOLANA_RPC_URL=${NEXT_PUBLIC_SOLANA_RPC_URL}
+ARG NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID=""
+ENV NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID=${NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID}
+ARG NEXT_PUBLIC_UPLOAD_MODE=""
+ENV NEXT_PUBLIC_UPLOAD_MODE=${NEXT_PUBLIC_UPLOAD_MODE}
 # Auto-build when the app defines a build script (Next.js needs it).
 # Fails the image build if the script exists and errors — surfaces bugs early.
 RUN if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then \

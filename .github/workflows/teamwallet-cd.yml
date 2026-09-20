@@ -16,7 +16,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: teamwallet-dev
+    environment: dev
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
@@ -100,6 +100,57 @@ jobs:
           fi
           echo "namespace $NS is Active — proceeding with apply."
 
+
+      - name: Materialize app env from GitHub → Kubernetes Secret(s)
+        # Application config lives in GitHub (environment: dev) — encrypted secrets for
+        # sensitive values, plain variables for the rest.
+        #
+        # Routing: a name prefixed <SERVICE>__ goes to that service's own
+        # Secret with the prefix stripped; everything else is shared.
+        #   DATABASE_URL         -> app-env          (every service)
+        #   FRONTEND__API_URL    -> app-env-frontend (pod sees API_URL)
+        #
+        # Values are MERGED (not replaced) so keys written by other flows —
+        # the DB-connect's DATABASE_URL, Connections-tab extras — survive
+        # every deploy. GITHUB_*-named values arrive via their APP_* alias.
+        # Unset names are skipped with a warning instead of failing the deploy.
+        env:
+          BIRDEYE_API_KEY: ${{ secrets.BIRDEYE_API_KEY }}
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NEXT_PUBLIC_PINATA_JWT: ${{ secrets.NEXT_PUBLIC_PINATA_JWT }}
+          LOCAL_UPLOAD_DIR: ${{ vars.LOCAL_UPLOAD_DIR }}
+          NEXT_PUBLIC_SOLANA_NETWORK: ${{ vars.NEXT_PUBLIC_SOLANA_NETWORK }}
+          NEXT_PUBLIC_SOLANA_RPC_URL: ${{ vars.NEXT_PUBLIC_SOLANA_RPC_URL }}
+          NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID: ${{ vars.NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID }}
+          NEXT_PUBLIC_UPLOAD_MODE: ${{ vars.NEXT_PUBLIC_UPLOAD_MODE }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          for PAIR in BIRDEYE_API_KEY=BIRDEYE_API_KEY JUPITER_API_KEY=JUPITER_API_KEY JWT_REFRESH_SECRET=JWT_REFRESH_SECRET JWT_SECRET=JWT_SECRET NEXT_PUBLIC_PINATA_JWT=NEXT_PUBLIC_PINATA_JWT LOCAL_UPLOAD_DIR=LOCAL_UPLOAD_DIR NEXT_PUBLIC_SOLANA_NETWORK=NEXT_PUBLIC_SOLANA_NETWORK NEXT_PUBLIC_SOLANA_RPC_URL=NEXT_PUBLIC_SOLANA_RPC_URL NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID=NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID NEXT_PUBLIC_UPLOAD_MODE=NEXT_PUBLIC_UPLOAD_MODE; do
+            REAL="${PAIR%%=*}"; SRC="${PAIR#*=}"
+            VAL="${!SRC:-}"
+            # Strip carriage returns and a trailing newline. A value saved
+            # with a Windows line ending reaches the pod as "debug\r\n" and
+            # the app rejects its own valid setting — gin panicked with
+            # "mode unknown: debug" on exactly that (2026-09-06, go-app).
+            VAL="${VAL//$'\r'/}"; VAL="${VAL%%$'\n'}"
+            if [ -n "$VAL" ]; then
+              ARGS+=("--from-literal=$REAL=$VAL")
+            else
+              echo "::warning::$SRC is not set in GitHub environment 'dev' — the pod will not see $REAL."
+            fi
+          done
+          if [ ${#ARGS[@]} -gt 0 ]; then
+            DOC=$(kubectl -n storefront-devteam create secret generic app-env "${ARGS[@]}" --dry-run=client -o json)
+            if kubectl -n storefront-devteam get secret app-env >/dev/null 2>&1; then
+              kubectl -n storefront-devteam patch secret app-env --type merge -p "$DOC"
+            else
+              printf '%s' "$DOC" | kubectl -n storefront-devteam create -f -
+            fi
+            echo "app-env: ${#ARGS[@]} key(s)"
+          fi
       - name: Pin the image to this build's immutable digest-equivalent tag
         # The committed manifest carries ":latest" so it is readable and so a
         # manual kubectl apply still works. But ":latest" is not a deploy

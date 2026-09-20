@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   build-and-push:
+    environment: dev
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,7 +35,7 @@ jobs:
         env:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
-        run: docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+        run: docker build --build-arg NEXT_PUBLIC_PINATA_JWT="${{ secrets.NEXT_PUBLIC_PINATA_JWT }}" --build-arg NEXT_PUBLIC_SOLANA_NETWORK="${{ vars.NEXT_PUBLIC_SOLANA_NETWORK }}" --build-arg NEXT_PUBLIC_SOLANA_RPC_URL="${{ vars.NEXT_PUBLIC_SOLANA_RPC_URL }}" --build-arg NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID="${{ vars.NEXT_PUBLIC_TEAM_WALLET_PROGRAM_ID }}" --build-arg NEXT_PUBLIC_UPLOAD_MODE="${{ vars.NEXT_PUBLIC_UPLOAD_MODE }}" -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
 
       - name: Scan image for vulnerabilities (Trivy)
         continue-on-error: true
